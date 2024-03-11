@@ -22,12 +22,17 @@ type Data struct {
 	Loss string `json:"loss"`
 }
 
-var attempts int
+var (
+	attempts int
+	token    string
+)
 
 func main() {
 	var port int
 	flag.IntVar(&port, "p", 8080, "port to listen on")
 	flag.IntVar(&attempts, "a", 5, "number of connection attempts")
+	flag.StringVar(&token, "t", "", "authentication token")
+	flag.Parse()
 
 	if port < 0 || port > 65535 {
 		fmt.Println("Invalid port number. Please enter a port number between 0 and 65535.")
@@ -40,6 +45,7 @@ func main() {
 	}
 
 	http.HandleFunc("/", handleRequest)
+	fmt.Printf("HTTP server listening at http://0.0.0.0:%d\n", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 	if err != nil {
 		fmt.Println("Start Http Server Error ", err.Error())
@@ -48,6 +54,13 @@ func main() {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
+	if token != "" {
+		reqToken := r.URL.Query().Get("token")
+		if reqToken != token {
+			http.Error(w, "Forbidden - Invalid token", http.StatusForbidden)
+			return
+		}
+	}
 	host := r.URL.Query().Get("host")
 	if host == "" {
 		http.Error(w, "Missing host parameter", http.StatusBadRequest)
@@ -70,7 +83,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	for i := 0; i < attempts; i++ {
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second*10)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second*2)
 		if err == nil {
 			successCount++
 			totalPing += float64(time.Since(start).Milliseconds())
