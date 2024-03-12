@@ -22,10 +22,20 @@ Run `tcp_checker`, it listens on port 8080 by default, makes 5 connection attemp
 ./tcp_checker
 ```
 
-You can specify the target host and port with the query parameters `host`, `port` and `token`:
+You can check target tcp connection with host and port at the query parameters `host`, `port` and `token`:
 
 ```bash
 curl "http://localhost:8080/?host=example.com&port=80&token=<your-token>"
+```
+
+You can also batch check tcp connection by post the data :
+
+```bash
+curl --location 'http://localhost:8080/batch?token=<your-token>' \
+--header 'Content-Type: text/plain' \
+--data '1.1.1.1:80
+google.com:443
+10.0.0.1:1234'
 ```
 
 You can also specify the listening port and the number of connection attempts with the `-p` and `-a` options:
@@ -50,6 +60,10 @@ After=network.target
 
 [Service]
 ExecStart=/path/to/tcp_checker
+Restart=on-abnormal
+RestartSec=5s
+StandardOutput=null
+StandardError=syslog
 
 [Install]
 WantedBy=multi-user.target

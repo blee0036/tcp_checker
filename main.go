@@ -1,25 +1,28 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
 type PingResult struct {
 	Success bool  `json:"success"`
-	Data    *Data `json:"data,omitempty"`
+	Data    *Data `json:"data"`
 }
 
 type Data struct {
 	Host string `json:"host"`
 	Port string `json:"port"`
-	Ping string `json:"ping"`
-	Loss string `json:"loss"`
+	Ping string `json:"ping,omitempty"`
+	Loss string `json:"loss,omitempty"`
 }
 
 var (
@@ -45,6 +48,7 @@ func main() {
 	}
 
 	http.HandleFunc("/", handleRequest)
+	http.HandleFunc("/batch", handleBatchRequest)
 	fmt.Printf("HTTP server listening at http://0.0.0.0:%d\n", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 	if err != nil {
@@ -78,6 +82,82 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+
+	result := performPing(host, port)
+
+	jsonErr := json.NewEncoder(w).Encode(result)
+	if jsonErr != nil {
+		http.Error(w, jsonErr.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func handleBatchRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if token != "" {
+		reqToken := r.URL.Query().Get("token")
+		if reqToken != token {
+			http.Error(w, "Forbidden - Invalid token", http.StatusForbidden)
+			return
+		}
+	}
+
+	var wg sync.WaitGroup
+	results := make([]PingResult, 0)
+	var mutex sync.Mutex
+
+	scanner := bufio.NewScanner(r.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		hostPort := splitHostPort(line)
+		if hostPort == nil {
+			continue // skip invalid lines
+		}
+
+		wg.Add(1)
+		go func(host, port string) {
+			defer wg.Done()
+			defer mutex.Unlock()
+
+			result := performPing(host, port)
+			mutex.Lock()
+			results = append(results, *result)
+		}(hostPort[0], hostPort[1])
+	}
+
+	if err := scanner.Err(); err != nil {
+		http.Error(w, "Error reading request body", http.StatusInternalServerError)
+		return
+	}
+
+	wg.Wait()
+
+	w.Header().Set("Content-Type", "application/json")
+	jsonErr := json.NewEncoder(w).Encode(results)
+	if jsonErr != nil {
+		http.Error(w, jsonErr.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func splitHostPort(hostPortStr string) []string {
+	hostPort := strings.Split(hostPortStr, ":")
+	if len(hostPort) != 2 {
+		return []string{hostPortStr, "80"}
+	}
+	portInt, err := strconv.Atoi(hostPort[1])
+	if err != nil || portInt < 0 || portInt > 65535 {
+		return nil
+	}
+	return hostPort
+}
+
+func performPing(host, port string) *PingResult {
 	successCount := 0
 	totalPing := float64(0)
 
@@ -94,18 +174,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
 	if successCount == 0 {
 		result := &PingResult{
 			Success: false,
+			Data: &Data{
+				Host: host,
+				Port: port,
+			},
 		}
-		jsonErr := json.NewEncoder(w).Encode(result)
-		if jsonErr != nil {
-			http.Error(w, jsonErr.Error(), http.StatusInternalServerError)
-			return
-		}
-		return
+		return result
 	}
 	loss := (float64(attempts) - float64(successCount)) / float64(attempts) * 100
 	avgPing := totalPing / float64(successCount)
@@ -120,9 +197,5 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	jsonErr := json.NewEncoder(w).Encode(result)
-	if jsonErr != nil {
-		http.Error(w, jsonErr.Error(), http.StatusInternalServerError)
-		return
-	}
+	return result
 }
