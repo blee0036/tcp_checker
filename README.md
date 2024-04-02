@@ -38,9 +38,17 @@ google.com:443
 10.0.0.1:1234'
 ```
 
-You can also specify the listening port and the number of connection attempts with the `-p` and `-a` options:
+### Parameter Explanation:
+
+- `-p, --port <port>`: Port to listen on (default 8080)
+- `-a, --attempts <attempts>`: Number of connection attempts to a TCP port (default 5)
+- `-tN, --threadNum <threadNum>`: Number of TCP connect threads for concurrent connection detection  (default 32)
+- `-tO, --timeoutMS <timeoutMS>`: Timeout in milliseconds for each connection detection (default 2000)
+- `-t, --token <token>`: Authentication token for requests (default empty)
+
+### Simple Example
 ```bash
-./tcp_checker -p 8081 -a 10 -t VeR1fy
+./tcp_checker -p 8081 -a 10 -tN 64 -tO 3000 -t "Ver1f^"
 ```
 
 ## Run as a Service
