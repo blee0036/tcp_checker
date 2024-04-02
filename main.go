@@ -25,20 +25,41 @@ type Data struct {
 	Loss string `json:"loss,omitempty"`
 }
 
+type PingJob struct {
+	host    string
+	port    string
+	results chan *TcpResult
+}
+
+type TcpResult struct {
+	success bool
+	ping    float64
+}
+
 var (
-	attempts int
-	token    string
+	attempts       int
+	token          string
+	timeoutMS      int
+	pingJobChannel chan PingJob
 )
 
 func main() {
 	var port int
+	var threadNum int
 	flag.IntVar(&port, "p", 8080, "port to listen on")
 	flag.IntVar(&attempts, "a", 5, "number of connection attempts")
+	flag.IntVar(&threadNum, "tN", 32, "number of tcp connect thread")
+	flag.IntVar(&timeoutMS, "tO", 2000, "tcp connect timeout in milliseconds")
 	flag.StringVar(&token, "t", "", "authentication token")
 	flag.Parse()
 
 	if port < 0 || port > 65535 {
 		fmt.Println("Invalid port number. Please enter a port number between 0 and 65535.")
+		return
+	}
+
+	if threadNum <= 0 {
+		fmt.Println("Invalid thread number. Please enter a thread num more than 0.")
 		return
 	}
 
@@ -49,6 +70,13 @@ func main() {
 
 	http.HandleFunc("/", handleRequest)
 	http.HandleFunc("/batch", handleBatchRequest)
+
+	// start thread
+	pingJobChannel = make(chan PingJob)
+	for t := 0; t < threadNum; t++ {
+		go tcpingThread(pingJobChannel)
+	}
+
 	fmt.Printf("HTTP server listening at http://0.0.0.0:%d\n", port)
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 	if err != nil {
@@ -157,20 +185,49 @@ func splitHostPort(hostPortStr string) []string {
 	return hostPort
 }
 
+func tcpingThread(jobs <-chan PingJob) {
+	for job := range jobs {
+		start := time.Now()
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(job.host, job.port), time.Duration(timeoutMS)*time.Millisecond)
+		if err == nil {
+			ping := float64(time.Since(start).Milliseconds())
+			closeErr := conn.Close()
+			if closeErr != nil {
+				fmt.Println("connect close err ", closeErr)
+			}
+			job.results <- &TcpResult{
+				success: true,
+				ping:    ping,
+			}
+		} else {
+			job.results <- &TcpResult{
+				success: false,
+				ping:    0,
+			}
+		}
+
+	}
+}
+
 func performPing(host, port string) *PingResult {
 	successCount := 0
 	totalPing := float64(0)
 
+	results := make(chan *TcpResult)
 	for i := 0; i < attempts; i++ {
-		start := time.Now()
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second*2)
-		if err == nil {
-			successCount++
-			totalPing += float64(time.Since(start).Milliseconds())
-			closeErr := conn.Close()
-			if closeErr != nil {
-				continue
-			}
+		pingJobChannel <- PingJob{
+			host:    host,
+			port:    port,
+			results: results,
+		}
+	}
+
+	for i := 0; i < attempts; i++ {
+		resultP := <-results
+		result := *resultP
+		if result.success {
+			successCount += 1
+			totalPing += result.ping
 		}
 	}
 
