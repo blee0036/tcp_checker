@@ -42,7 +42,6 @@ google.com:443
 
 - `-p, --port <port>`: Port to listen on (default 8080)
 - `-a, --attempts <attempts>`: Number of connection attempts to a TCP port (default 5)
-- `-tN, --threadNum <threadNum>`: Number of TCP connect threads for concurrent connection detection  (default 32)
 - `-tO, --timeoutMS <timeoutMS>`: Timeout in milliseconds for each connection detection (default 2000)
 - `-t, --token <token>`: Authentication token for requests (default empty)
 

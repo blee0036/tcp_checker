@@ -26,8 +26,9 @@ type Data struct {
 }
 
 var (
-	attempts int
-	token    string
+	attempts  int
+	token     string
+	timeoutMS int
 )
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 	flag.IntVar(&port, "p", 8080, "port to listen on")
 	flag.IntVar(&attempts, "a", 5, "number of connection attempts")
 	flag.StringVar(&token, "t", "", "authentication token")
+	flag.IntVar(&timeoutMS, "tO", 2000, "tcp ping timeout in milliseconds")
 	flag.Parse()
 
 	if port < 0 || port > 65535 {
@@ -162,8 +164,9 @@ func performPing(host, port string) *PingResult {
 	totalPing := float64(0)
 
 	for i := 0; i < attempts; i++ {
+		fmt.Printf("%s,%s,%d \n", host, port, i)
 		start := time.Now()
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second*2)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Millisecond*time.Duration(timeoutMS))
 		if err == nil {
 			successCount++
 			totalPing += float64(time.Since(start).Milliseconds())
