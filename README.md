@@ -47,7 +47,7 @@ google.com:443
 
 ### Simple Example
 ```bash
-./tcp_checker -p 8081 -a 10 -tN 64 -tO 3000 -t "Ver1f^"
+./tcp_checker -p 8081 -a 10 -tO 3000 -t "Ver1f^"
 ```
 
 ## Run as a Service
